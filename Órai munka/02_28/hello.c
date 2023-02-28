@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 #include <CL/cl.h>
 
@@ -7,10 +8,22 @@ const int SAMPLE_SIZE = 1000;
 
 int main(void)
 {
-    printf("Select a code! (a, b, b, d)\n");
-    char* select[10];
-    scanf(%s, &select);
-    FILE *f = fopen("kernels/d.cl", "rb");
+    
+
+    char str1[50] = "kernels/";
+    char str2[50];
+    char str3[50] = ".cl";
+    
+    
+    printf("Select a code! (a,b,c,d)\n");
+    scanf("%s", str2);
+
+    strcat(str1, str2);
+    strcat(str1, str3);
+
+    //printf(str1);
+
+    FILE *f = fopen(str1, "rb");
     fseek(f, 0, SEEK_END);
     long fsize = ftell(f);
     fseek(f, 0, SEEK_SET);  /* same as rewind(f); */
@@ -19,9 +32,9 @@ int main(void)
     fclose(f);
     kernel_code[fsize] = 0;
 
-    printf("\n");
-    printf(kernel_code);
-    printf("\n");
+    //printf("\n");
+    //printf(kernel_code);
+    //printf("\n");
 
     int i;
     cl_int err;
