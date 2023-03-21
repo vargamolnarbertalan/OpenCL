@@ -10,7 +10,7 @@ char* load_kernel_source(const char* const path, int* error_code)
     char* source_code;
     int file_size;
 
-    source_file = fopen(path, "r");
+    source_file = fopen(path, "rb");
     if (source_file == NULL) {
         *error_code = -1;
         return NULL;

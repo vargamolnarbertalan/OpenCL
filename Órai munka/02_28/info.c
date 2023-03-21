@@ -1,8 +1,11 @@
 #include <stdio.h>
 #include <CL/cl.h>
+#include <time.h>
 
 int main(void)
 {
+	clock_t start_time, end_time;
+    double cpu_time_used;
     cl_int err;
     cl_platform_id platform_id;
     cl_uint n_platforms;
