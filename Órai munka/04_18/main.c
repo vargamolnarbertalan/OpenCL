@@ -7,7 +7,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-const int SAMPLE_SIZE = 102400;
+const int SAMPLE_SIZE = 262144;
 
 int main(void)
 {
@@ -171,9 +171,11 @@ int main(void)
 
     clFinish(command_queue);
 
+    
     for (i = 0; i < SAMPLE_SIZE; ++i) {
         printf("[%d] = %d, ", i, host_buffer[i]);
     }
+    
 
     // Release the resources
     printf("Release resources ...\n");

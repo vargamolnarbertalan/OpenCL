@@ -79,8 +79,8 @@ void exportToCsv(int SAMPLE_SIZE, cl_ulong kernel_execution_time){
     time_t t = time(NULL);
     struct tm *current_time = localtime(&t);
 
-    char datetime_str[20];
-    strftime(datetime_str, sizeof(datetime_str), "%Y_%m_%d_%H_%M", current_time);
+    char datetime_str[25];
+    strftime(datetime_str, sizeof(datetime_str), "%Y_%m_%d_%H_%M_%S", current_time);
     printf("Current datetime: %s\n", datetime_str);
     char str2[] = "_output.csv";
     strcat(datetime_str, str2);
@@ -95,4 +95,5 @@ void exportToCsv(int SAMPLE_SIZE, cl_ulong kernel_execution_time){
     // Close the output file
     fclose(output_file);
 }
+
 
