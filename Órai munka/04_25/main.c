@@ -7,10 +7,18 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-const int SAMPLE_SIZE = 262144;
+const int SAMPLE_SIZE = 3;
 
 int main(void)
 {
+
+    float input[] = {0.1, 0.2, 0.3, 0.4, 0.5};
+    int length = 5;
+    int N = length;
+    int filter_size = SAMPLE_SIZE;
+    
+    // Allocate memory for the output array
+    float *output = (float*) malloc(length * sizeof(float));
     int i;
     cl_int err;
     int error_code;
@@ -87,28 +95,36 @@ int main(void)
     cl_kernel kernel = clCreateKernel(program, "sample_kernel", NULL);
 
     // Create the host buffer and initialize it
-    int* host_buffer = (int*)malloc(SAMPLE_SIZE * sizeof(int));
-    srand(0);
-    for (i = 0; i < SAMPLE_SIZE; ++i) {
-        host_buffer[i] = rand() % 1000;
-    }
-
-    // Create the device buffer
-    cl_mem device_buffer = clCreateBuffer(
+    cl_mem input_buffer = clCreateBuffer(
         context,
-        CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR,
-        SAMPLE_SIZE * sizeof(int),
-        host_buffer,
+        CL_MEM_READ_WRITE,
+        length * sizeof(float),
+        NULL,
         &err
     );
     if (err != CL_SUCCESS) {
-        printf("Unable to create buffer! Code: %d\n", err);
+        printf("Unable to create input buffer! Code: %d\n", err);
+        return 0;
+    }
+
+    // Create the device buffer
+    cl_mem output_buffer = clCreateBuffer(
+        context,
+        CL_MEM_READ_WRITE,
+        length * sizeof(int),
+        NULL,
+        &err
+    );
+    if (err != CL_SUCCESS) {
+        printf("Unable to create output buffer! Code: %d\n", err);
         return 0;
     }
 
     // Set kernel arguments
-    clSetKernelArg(kernel, 0, sizeof(cl_mem), (void*)&device_buffer);
-    clSetKernelArg(kernel, 1, sizeof(int), (void*)&SAMPLE_SIZE);
+    clSetKernelArg(kernel, 0, sizeof(cl_mem), (void *)&input_buffer);
+    clSetKernelArg(kernel, 1, sizeof(cl_mem), (void *)&output_buffer);
+    clSetKernelArg(kernel, 2, sizeof(int), (void *)&N);
+    clSetKernelArg(kernel, 3, sizeof(int), (void *)&filter_size);
 
     // Create the command queue
     cl_command_queue command_queue = clCreateCommandQueue(
@@ -117,82 +133,39 @@ int main(void)
     // Host buffer -> Device buffer
     clEnqueueWriteBuffer(
         command_queue,
-        device_buffer,
+        input_buffer,
         CL_TRUE,
         0,
-        SAMPLE_SIZE * sizeof(int),
-        host_buffer,
+        length * sizeof(float),
+        input,
         0,
         NULL,
         NULL
     );
 
-    // Size specification
-    size_t local_work_size = 256;
-    size_t global_work_size = SAMPLE_SIZE;
+    size_t local_size = 256;
+    size_t global_size = 256;
+    err = clEnqueueNDRangeKernel(command_queue, kernel, 1, NULL, &global_size, &local_size, 0, NULL, NULL);
+    if (err != CL_SUCCESS) {
+        printf("Error enqueueing kernel: %d\n", err);
+        return 1;
+    }
 
-   cl_event event;
 
-    // Apply the kernel on the range
-    clEnqueueNDRangeKernel(
-        command_queue,
-        kernel,
-        1,
-        NULL,
-        &global_work_size,
-        &local_work_size,
-        0,
-        NULL,
-        &event
-    );
-
-    clWaitForEvents(1, &event);
-
-    // Get the kernel execution time in nanoseconds
-   cl_ulong start_time, end_time;
-   clGetEventProfilingInfo(event, CL_PROFILING_COMMAND_START, sizeof(start_time), &start_time, NULL);
-   clGetEventProfilingInfo(event, CL_PROFILING_COMMAND_END, sizeof(end_time), &end_time, NULL);
-   cl_ulong kernel_execution_time = end_time - start_time;
-
-   
-
-    // Host buffer <- Device buffer
-    clEnqueueReadBuffer(
-        command_queue,
-        device_buffer,
-        CL_TRUE,
-        0,
-        SAMPLE_SIZE * sizeof(int),
-        host_buffer,
-        0,
-        NULL,
-        NULL
-    );
-
+    err = clEnqueueReadBuffer(command_queue, output_buffer, CL_TRUE, 0, length * sizeof(float), output, 0, NULL, NULL);
+    if (err != CL_SUCCESS) {
+        printf("Error reading output buffer: %d\n", err);
+        return 1;
+    }
     clFinish(command_queue);
 
-    /*
-    for (i = 0; i < SAMPLE_SIZE; ++i) {
-        printf("[%d] = %d, ", i, host_buffer[i]);
+    for(int i = 0; i < length; i++){
+        printf("%f\n", output[i]);
     }
-    */
-    
 
-    // Release the resources
-    printf("Release resources ...\n");
+    // Release resources
+    //clReleaseMemObject(input_buffer);
+    clReleaseMemObject(output_buffer);
     clReleaseKernel(kernel);
-    clReleaseProgram(program);
-    clReleaseMemObject(device_buffer);
-    clReleaseContext(context);
-    clReleaseDevice(device_id);
-
-    free(host_buffer);
-
-    
-
-    // Print the kernel execution time in milliseconds
-   printf("\nKernel execution time: %0.3f ms\n", kernel_execution_time / 1000000.0);
-   exportToCsv(SAMPLE_SIZE, kernel_execution_time);
-
-   printf("Ready!\n");
-}
+    clReleaseCommandQueue(command_queue);
+    }
