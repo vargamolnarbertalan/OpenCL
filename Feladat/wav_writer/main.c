@@ -22,10 +22,13 @@ typedef struct {
 int main() {
     // Specify the signal parameters
     double frequency = 440;     // Hz
-    double amplitude = 0.5;     // 0 to 1
-    double duration = 5;        // seconds
+    double amplitude = 1;     // 0 to 1
+    double duration;        // seconds
     int sample_rate = 44100;    // samples per second
     
+    printf("Enter the duration in seconds: ");
+    scanf("%lf", &duration);
+
     // Compute the number of samples
     int num_samples = (int)(duration * sample_rate);
     

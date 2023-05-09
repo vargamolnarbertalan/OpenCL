@@ -1,87 +1,110 @@
 #include <stdio.h>
 #include <stdlib.h>
-#include <stdint.h>
+#include <math.h>
+#include <time.h>
+#include <string.h>
 
+// Define the WAV file header structure
 typedef struct {
     char chunk_id[4];
-    uint32_t chunk_size;
+    int chunk_size;
     char format[4];
-} ChunkHeader;
-
-typedef struct {
     char subchunk1_id[4];
-    uint32_t subchunk1_size;
-    uint16_t audio_format;
-    uint16_t num_channels;
-    uint32_t sample_rate;
-    uint32_t byte_rate;
-    uint16_t block_align;
-    uint16_t bits_per_sample;
-} Subchunk1Header;
-
-typedef struct {
+    int subchunk1_size;
+    short audio_format;
+    short num_channels;
+    int sample_rate;
+    int byte_rate;
+    short block_align;
+    short bits_per_sample;
     char subchunk2_id[4];
-    uint32_t subchunk2_size;
-} Subchunk2Header;
+    int subchunk2_size;
+} WavHeader;
 
-int main(int argc, char **argv) {
-    if (argc < 2) {
-        printf("Usage: %s [input_file]\n", argv[0]);
-        return 1;
-    }
+void exportToCsv(double execution_time, double duration);
 
-    // Open input file for reading
-    FILE *input_file = fopen(argv[1], "rb");
+int main() {    
+    clock_t start, end;
+    double cpu_time_used;
+    const int sample_rate = 44100;
+    // Open the input file for reading
+    FILE *input_file = fopen("output.wav", "rb");
     if (input_file == NULL) {
-        printf("Error: could not open input file '%s'\n", argv[1]);
+        printf("Error: Failed to open input file\n");
         return 1;
     }
 
-    // Read in file header
-    ChunkHeader chunk_header;
-    fread(&chunk_header, sizeof(chunk_header), 1, input_file);
+    // Read the WAV file header
+    WavHeader header;
+    fread(&header, sizeof(WavHeader), 1, input_file);
 
-    Subchunk1Header subchunk1_header;
-    fread(&subchunk1_header, sizeof(subchunk1_header), 1, input_file);
+    // Compute the number of samples
+    int num_samples = header.subchunk2_size / sizeof(short);
 
-    Subchunk2Header subchunk2_header;
-    fread(&subchunk2_header, sizeof(subchunk2_header), 1, input_file);
+    // Allocate memory for the audio buffer
+    double *buffer = (double*) malloc(num_samples * sizeof(double));
 
-    // Determine maximum absolute amplitude in file
-    int16_t max_amplitude = 0;
-    int16_t sample;
-    for (uint32_t i = 0; i < subchunk2_header.subchunk2_size / sizeof(sample); i++) {
-        fread(&sample, sizeof(sample), 1, input_file);
-        if (abs(sample) > max_amplitude) {
-            max_amplitude = abs(sample);
-        }
+    start = clock();
+
+    // Read the audio data from the file
+    short sample;
+    for (int i = 0; i < num_samples; i++) {
+        fread(&sample, sizeof(short), 1, input_file);
+        buffer[i] = ((double)sample / 32767.0) / 8.0;  // Divide amplitude by 8
     }
+    double duration = num_samples / sample_rate;
+    end = clock(); // get end time
 
-    // Reset file position to beginning of data
-    fseek(input_file, sizeof(chunk_header) + sizeof(subchunk1_header) + sizeof(subchunk2_header), SEEK_SET);
+    cpu_time_used = ((double) (end - start)) / CLOCKS_PER_SEC;
 
-    // Open output file for writing
-    FILE *output_file = fopen("normalized.wav", "wb");
-    if (output_file == NULL) {
-        printf("Error: could not open output file\n");
-        return 1;
-    }
-
-    // Write file header to output file
-    fwrite(&chunk_header, sizeof(chunk_header), 1, output_file);
-    fwrite(&subchunk1_header, sizeof(subchunk1_header), 1, output_file);
-    fwrite(&subchunk2_header, sizeof(subchunk2_header), 1, output_file);
-
-    // Normalize and write samples to output file
-    float factor = 1.0 / max_amplitude;
-    while (fread(&sample, sizeof(sample), 1, input_file) == 1) {
-        int16_t normalized_sample = (int16_t)(sample * factor);
-        fwrite(&normalized_sample, sizeof(normalized_sample), 1, output_file);
-    }
-
-    // Close files
+    // Close the input file
     fclose(input_file);
-    fclose(output_file);
 
+    // Open the output file for writing
+    FILE *output_file = fopen("output_modified.wav", "wb");
+    if (output_file == NULL) {
+        printf("Error: Failed to open output file\n");
+        return 1;
+    }
+
+    // Write the WAV file header
+    fwrite(&header, sizeof(WavHeader), 1, output_file);
+
+    // Write the modified audio data to the file
+    for (int i = 0; i < num_samples; i++) {
+        sample = (short) round(buffer[i] * 32767);
+        fwrite(&sample, sizeof(short), 1, output_file);
+    }
+
+    // Close the output file and free the buffer memory
+    fclose(output_file);
+    free(buffer);
+
+    printf("WAV file written successfully!\n");
+
+    exportToCsv(cpu_time_used,duration/60);
+    
     return 0;
+}
+
+void exportToCsv(double execution_time, double duration){
+    // Open the output file
+    time_t t = time(NULL);
+    struct tm *current_time = localtime(&t);
+
+    char datetime_str[25];
+    strftime(datetime_str, sizeof(datetime_str), "%Y_%m_%d_%H_%M_%S", current_time);
+    printf("Measurement timestamp: %s\n", datetime_str);
+    char str2[] = "_output.csv";
+    strcat(datetime_str, str2);
+    FILE* output_file = fopen(datetime_str, "w");
+
+    // Write the header row
+    fprintf(output_file, "wav_duration(min),execution_time(sec)\n");
+    int dur = (int) duration;
+    // Write the data row
+    fprintf(output_file, "%d,%0.3f\n",dur,execution_time);
+
+    // Close the output file
+    fclose(output_file);
 }
