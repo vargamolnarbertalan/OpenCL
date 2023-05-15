@@ -7,21 +7,61 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-const int SAMPLE_SIZE = 3;
+// Define the WAV file header structure
+typedef struct {
+    char chunk_id[4];
+    int chunk_size;
+    char format[4];
+    char subchunk1_id[4];
+    int subchunk1_size;
+    short audio_format;
+    short num_channels;
+    int sample_rate;
+    int byte_rate;
+    short block_align;
+    short bits_per_sample;
+    char subchunk2_id[4];
+    int subchunk2_size;
+} WavHeader;
 
-int main(void)
-{
-
-    float input[] = {0.1, 0.2, 0.3, 0.4, 0.5};
-    int length = 5;
-    int N = length;
-    int filter_size = SAMPLE_SIZE;
-    
-    // Allocate memory for the output array
-    float *output = (float*) malloc(length * sizeof(float));
-    int i;
+int main() {
+    // Set up OpenCL
+    cl_platform_id platform;
+    cl_device_id device;
+    cl_command_queue queue;
+    cl_program program;
+    cl_kernel kernel;
     cl_int err;
-    int error_code;
+
+    // Compute the number of samples
+    const int sample_rate = 44100;
+    // Open the input file for reading
+    FILE *input_file = fopen("output.wav", "rb");
+    if (input_file == NULL) {
+        printf("Error: Failed to open input file\n");
+        return 1;
+    }
+
+    // Read the WAV file header
+    WavHeader header;
+    fread(&header, sizeof(WavHeader), 1, input_file);
+
+    // Compute the number of samples
+    int num_samples = header.subchunk2_size / sizeof(short);
+
+    // Allocate memory for the audio buffer
+    double *buffer = (double*) malloc(num_samples * sizeof(double));
+
+    // Read the audio data from the file
+    short sample;
+    for (int i = 0; i < num_samples; i++) {
+        fread(&sample, sizeof(short), 1, input_file);
+        buffer[i] = ((double)sample / 32767.0);  // Divide amplitude by 8
+    }
+    double duration = num_samples / sample_rate;
+
+    // Close the input file
+    fclose(input_file);
 
     // Get platform
     cl_uint n_platforms;
@@ -49,123 +89,78 @@ int main(void)
 
     // Create OpenCL context
     cl_context context = clCreateContext(NULL, n_devices, &device_id, NULL, NULL, NULL);
+    queue = clCreateCommandQueue(context, device, 0, &err);
 
-    // Build the program
-    const char* kernel_code = load_kernel_source("kernels/sample.cl", &error_code);
-    if (error_code != 0) {
-        printf("Source code loading error!\n");
-        return 0;
-    }
-    cl_program program = clCreateProgramWithSource(context, 1, &kernel_code, NULL, NULL);
-    const char options[] = "";
-    err = clBuildProgram(
-        program,
-        1,
-        &device_id,
-        options,
-        NULL,
-        NULL
-    );
-    if (err != CL_SUCCESS) {
-        printf("Build error! Code: %d\n", err);
-        size_t real_size;
-        err = clGetProgramBuildInfo(
-            program,
-            device_id,
-            CL_PROGRAM_BUILD_LOG,
-            0,
-            NULL,
-            &real_size
-        );
-        char* build_log = (char*)malloc(sizeof(char) * (real_size + 1));
-        err = clGetProgramBuildInfo(
-            program,
-            device_id,
-            CL_PROGRAM_BUILD_LOG,
-            real_size + 1,
-            build_log,
-            &real_size
-        );
-        // build_log[real_size] = 0;
-        printf("Real size : %d\n", real_size);
-        printf("Build log : %s\n", build_log);
-        free(build_log);
-        return 0;
-    }
-    cl_kernel kernel = clCreateKernel(program, "sample_kernel", NULL);
+    // Load and build the program
+    const char* source = "__kernel void modifyAudioData(__global const short* input, __global double* output, int num_samples) {\n"
+                         "    int gid = get_global_id(0);\n"
+                         "\n"
+                         "    if (gid < num_samples) {\n"
+                         "        output[gid] = ((double)input[gid] / 32767.0) / 8.0;\n"
+                         "    }\n"
+                         "}\n";
 
-    // Create the host buffer and initialize it
-    cl_mem input_buffer = clCreateBuffer(
-        context,
-        CL_MEM_READ_WRITE,
-        length * sizeof(float),
-        NULL,
-        &err
-    );
-    if (err != CL_SUCCESS) {
-        printf("Unable to create input buffer! Code: %d\n", err);
-        return 0;
-    }
+    program = clCreateProgramWithSource(context, 1, &source, NULL, &err);
+    err = clBuildProgram(program, 1, &device, NULL, NULL, NULL);
 
-    // Create the device buffer
-    cl_mem output_buffer = clCreateBuffer(
-        context,
-        CL_MEM_READ_WRITE,
-        length * sizeof(int),
-        NULL,
-        &err
-    );
-    if (err != CL_SUCCESS) {
-        printf("Unable to create output buffer! Code: %d\n", err);
-        return 0;
-    }
+    // Create the kernel
+    kernel = clCreateKernel(program, "modifyAudioData", &err);
 
-    // Set kernel arguments
-    clSetKernelArg(kernel, 0, sizeof(cl_mem), (void *)&input_buffer);
-    clSetKernelArg(kernel, 1, sizeof(cl_mem), (void *)&output_buffer);
-    clSetKernelArg(kernel, 2, sizeof(int), (void *)&N);
-    clSetKernelArg(kernel, 3, sizeof(int), (void *)&filter_size);
+    // Create memory buffers
+    cl_mem input_buffer = clCreateBuffer(context, CL_MEM_READ_ONLY, num_samples * sizeof(short), NULL, &err);
+    cl_mem output_buffer = clCreateBuffer(context, CL_MEM_WRITE_ONLY, num_samples * sizeof(double), NULL, &err);
 
-    // Create the command queue
-    cl_command_queue command_queue = clCreateCommandQueue(
-        context, device_id, CL_QUEUE_PROFILING_ENABLE, NULL);
+    // Set the kernel arguments
+    err = clSetKernelArg(kernel, 0, sizeof(cl_mem), (void *)&input_buffer);
+    err = clSetKernelArg(kernel, 1, sizeof(cl_mem), (void *)&output_buffer);
+    err = clSetKernelArg(kernel, 2, sizeof(int), (void *)&num_samples);
 
-    // Host buffer -> Device buffer
-    clEnqueueWriteBuffer(
-        command_queue,
-        input_buffer,
-        CL_TRUE,
-        0,
-        length * sizeof(float),
-        input,
-        0,
-        NULL,
-        NULL
-    );
+    // Enqueue write to input buffer
+    err = clEnqueueWriteBuffer(queue, input_buffer, CL_TRUE, 0, num_samples * sizeof(short), buffer, 0, NULL, NULL);
 
     size_t local_size = 256;
     size_t global_size = 256;
-    err = clEnqueueNDRangeKernel(command_queue, kernel, 1, NULL, &global_size, &local_size, 0, NULL, NULL);
-    if (err != CL_SUCCESS) {
-        printf("Error enqueueing kernel: %d\n", err);
-        return 1;
+
+    // Enqueue kernel for execution
+    //size_t global_size = num_samples;
+    err = clEnqueueNDRangeKernel(queue, kernel, 1, NULL, &global_size, NULL, 0, NULL, NULL);
+
+    // Enqueue read from output buffer
+    err = clEnqueueReadBuffer(queue, output_buffer, CL_TRUE, 0, num_samples * sizeof(double), buffer, 0, NULL, NULL);
+
+    // Create the output WAV file
+    FILE* output_file = fopen("output_modified.wav", "wb");
+    if (output_file == NULL) {
+    printf("Error: Failed to open output file\n");
+    return 1;
     }
 
+    // Write the WAV file header
+    fwrite(&header, sizeof(WavHeader), 1, output_file);
 
-    err = clEnqueueReadBuffer(command_queue, output_buffer, CL_TRUE, 0, length * sizeof(float), output, 0, NULL, NULL);
-    if (err != CL_SUCCESS) {
-        printf("Error reading output buffer: %d\n", err);
-        return 1;
-    }
-    clFinish(command_queue);
-
-    for(int i = 0; i < length; i++){
-        printf("%f\n", output[i]);
+    // Write the modified audio data to the file
+    for (int i = 0; i < num_samples; i++) {
+        sample = (short)round(buffer[i] * 32767);
+        fwrite(&sample, sizeof(short), 1, output_file);
     }
 
-    // Release resources
-    //clReleaseMemObject(input_buffer);
+    // Close the output file and free the buffer memory
+    fclose(output_file);
+    free(buffer);
+
+    printf("WAV file written successfully!\n");
+
+    //exportToCsv(cpu_time_used, duration / 60);
+
+
+    clFinish(queue);
+    // Release OpenCL resources
+    clReleaseMemObject(input_buffer);
     clReleaseMemObject(output_buffer);
     clReleaseKernel(kernel);
-    clReleaseCommandQueue(command_queue);
-    }
+    clReleaseProgram(program);
+    clReleaseCommandQueue(queue);
+    clReleaseContext(context);
+
+    return 0;
+}
