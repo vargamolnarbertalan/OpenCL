@@ -16,6 +16,6 @@ int* generateValues(int* arr, int size);
 float calculateMean(int arr[], int n);
 float calculateSd(int arr[], int n);
 bool hasCommonValue(int arr1[], int size1,int arr2[], int size2);
-void exportToCsv(int SAMPLE_SIZE, cl_ulong kernel_execution_time);
+void exportToCsv(double execution_time, double duration);
 
 #endif

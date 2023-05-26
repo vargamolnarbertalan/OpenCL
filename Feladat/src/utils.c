@@ -74,23 +74,23 @@ bool hasCommonValue(int arr1[], int size1,int arr2[], int size2){
     return false;
 }
 
-void exportToCsv(int SAMPLE_SIZE, cl_ulong kernel_execution_time){
+void exportToCsv(double execution_time, double duration){
     // Open the output file
     time_t t = time(NULL);
     struct tm *current_time = localtime(&t);
 
     char datetime_str[25];
     strftime(datetime_str, sizeof(datetime_str), "%Y_%m_%d_%H_%M_%S", current_time);
-    printf("Current datetime: %s\n", datetime_str);
+    printf("Measurement timestamp: %s\n", datetime_str);
     char str2[] = "_output.csv";
     strcat(datetime_str, str2);
     FILE* output_file = fopen(datetime_str, "w");
 
     // Write the header row
-    fprintf(output_file, "SAMPLE_SIZE,kernel_execution_time\n");
-
+    fprintf(output_file, "wav_duration(min),execution_time(sec)\n");
+    int dur = (int) duration;
     // Write the data row
-    fprintf(output_file, "%d,%0.3f\n", SAMPLE_SIZE, kernel_execution_time / 1000000.0);
+    fprintf(output_file, "%d,%0.3f\n",dur,execution_time);
 
     // Close the output file
     fclose(output_file);
